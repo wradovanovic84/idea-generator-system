@@ -205,57 +205,78 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 GEMINI_PROMPT = f"Ti si market analyst. Za ideju: '{content}'\nOdgovori samo na: ko su target korisnici, 2 konkurenta, 1 najveća pretnja. Max 4 rečenice."
                 CLAUDE_PROMPT = f"Ti si strategist. Za ideju: '{content}'\nDaj: 1 rečenica preporuka, 3 prednosti (bullet), 2 rizika (bullet), koji tech stack za gradnju. Max 150 reči. Bez uvoda."
 
-                # ── SVA 3 PARALELNO ─────────────────────────
-                def call_groq():
-                    r = groq_client.chat.completions.create(
-                        model=GROQ_MODEL,
-                        messages=[{"role": "system", "content": GROQ_PROMPT},
-                                  {"role": "user", "content": content}],
-                        temperature=0.7, max_tokens=250
-                    )
-                    return r.choices[0].message.content
+                # ── SVA 3 PARALELNO sa timeout i error handling ──
+                async def call_groq_async():
+                    try:
+                        loop = asyncio.get_event_loop()
+                        r = await asyncio.wait_for(
+                            loop.run_in_executor(None, lambda: groq_client.chat.completions.create(
+                                model=GROQ_MODEL,
+                                messages=[{"role": "system", "content": GROQ_PROMPT},
+                                          {"role": "user", "content": content}],
+                                temperature=0.7, max_tokens=250
+                            )), timeout=20
+                        )
+                        return r.choices[0].message.content
+                    except Exception as e:
+                        return f"[Groq nedostupan: {str(e)[:50]}]"
 
-                def call_gemini():
-                    r = gemini_client.models.generate_content(
-                        model=GEMINI_MODEL, contents=GEMINI_PROMPT
-                    )
-                    return r.text
+                async def call_gemini_async():
+                    try:
+                        loop = asyncio.get_event_loop()
+                        r = await asyncio.wait_for(
+                            loop.run_in_executor(None, lambda: gemini_client.models.generate_content(
+                                model=GEMINI_MODEL, contents=GEMINI_PROMPT
+                            )), timeout=25
+                        )
+                        return r.text
+                    except Exception as e:
+                        return f"[Gemini nedostupan: {str(e)[:50]}]"
 
-                def call_claude():
-                    r = claude_client.messages.create(
-                        model=CLAUDE_MODEL, max_tokens=300,
-                        messages=[{"role": "user", "content": CLAUDE_PROMPT}]
-                    )
-                    return r.content[0].text
+                async def call_claude_async():
+                    try:
+                        loop = asyncio.get_event_loop()
+                        r = await asyncio.wait_for(
+                            loop.run_in_executor(None, lambda: claude_client.messages.create(
+                                model=CLAUDE_MODEL, max_tokens=300,
+                                messages=[{"role": "user", "content": CLAUDE_PROMPT}]
+                            )), timeout=25
+                        )
+                        return r.content[0].text
+                    except Exception as e:
+                        return f"[Claude nedostupan: {str(e)[:50]}]"
 
-                loop = asyncio.get_event_loop()
                 groq_view, gemini_view, claude_view = await asyncio.gather(
-                    loop.run_in_executor(None, call_groq),
-                    loop.run_in_executor(None, call_gemini),
-                    loop.run_in_executor(None, call_claude),
+                    call_groq_async(),
+                    call_gemini_async(),
+                    call_claude_async(),
                 )
 
-                await send("groq",   groq_view,   {"agent": "groq"})
-                await send("gemini", gemini_view,  {"agent": "gemini"})
+                await send("groq",   groq_view,  {"agent": "groq"})
+                await send("gemini", gemini_view, {"agent": "gemini"})
                 await update_progress("brainstorm", 70, "working")
 
-                # ── Claude finalna sinteza (brza) ────────────
-                synthesis_resp = claude_client.messages.create(
-                    model=CLAUDE_MODEL, max_tokens=400,
-                    messages=[{"role": "user", "content": f"""Sintetiši ovo u JEDAN kratak izveštaj za CEO. Max 200 reči.
+                # ── Claude finalna sinteza ───────────────────
+                try:
+                    synthesis_resp = claude_client.messages.create(
+                        model=CLAUDE_MODEL, max_tokens=400,
+                        messages=[{"role": "user", "content": f"""Sintetiši u kratak izveštaj za CEO. Max 200 reči.
 
 Ideja: {content}
 Groq: {groq_view}
 Gemini: {gemini_view}
-Tvoja analiza: {claude_view}
+Claude analiza: {claude_view}
 
 Format:
 **PREPORUKA:** [1 rečenica]
 **GRADIMO JER:** [2-3 bullet]
 **PAZI NA:** [2 bullet]
 **SLEDEĆI KORAK:** [1 konkretna akcija]"""}]
-                )
-                synthesis = synthesis_resp.content[0].text
+                    )
+                    synthesis = synthesis_resp.content[0].text
+                except Exception as e:
+                    synthesis = f"Sinteza nije uspela ({e}). Groq: {groq_view[:200]}"
+
                 session["brainstorm_summary"] = _compress_summary(content, groq_view, gemini_view, synthesis)
                 session["idea_refined"] = synthesis
                 await send("claude", synthesis, {"agent": "claude"})
