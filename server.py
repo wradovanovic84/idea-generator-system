@@ -181,7 +181,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             await send("progress", "", {"agent": agent, "pct": pct, "status": status})
 
         # ── Dobrodošlica ──
-        await send("system", "🏢 **CEO INKUBATOR IDEJA** — Dobrodošao!\n\nOpiši svoju ideju što jasnije možeš. Nema loših ideja — samo počni.")
+        await send("system", "🏢 **CEO INKUBATOR IDEJA**\n\nDobrodošao! Opiši svoju ideju što jasnije možeš.\nNaš tim od 3 AI-a će je odmah analizirati i dati ti konkretnu preporuku.")
         await update_progress("ceo", 10, "active")
 
         while True:
@@ -189,75 +189,110 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             msg_type = data.get("type", "message")
             content = data.get("content", "")
 
-            # ── CEO unosi ideju ──────────────────────────────
+            # ── KORAK 1: CEO unosi ideju → 3 AI diskusija ───
             if session["step"] == "idea_input" and msg_type == "message":
                 session["idea_raw"] = content
                 session["messages"].append({"role": "user", "content": content})
-                await update_progress("ceo", 30, "active")
+                await update_progress("ceo", 40, "active")
+                await update_progress("brainstorm", 10, "working")
 
-                # Groq — brza brainstorm pitanja
-                await send("agent_start", "🔥 **GROQ** analizira ideju...", {"agent": "groq"})
-                groq_client = Groq(api_key=GROQ_API_KEY)
+                groq_client  = Groq(api_key=GROQ_API_KEY)
+                gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
+                claude_client = Anthropic()
+
+                # ── Groq: brza perspektiva ──────────────────
+                await send("agent_start", "⚡ **Groq** analizira...", {"agent": "groq"})
                 groq_resp = groq_client.chat.completions.create(
                     model=GROQ_MODEL,
-                    messages=[
-                        {"role": "system", "content": "Ti si AI Brainstorm Partner. Postavi 4-5 preciznih pitanja koja će pomoći CEO-u da razradi ideju. Budi koncizan i entuzijastičan."},
-                        {"role": "user", "content": f"CEO ideja: {content}"}
-                    ],
-                    temperature=0.8, max_tokens=600
+                    messages=[{
+                        "role": "system",
+                        "content": "Ti si brzi AI strateg u timu. Daj KRATKU perspektivu na ideju: šta je dobro, šta nedostaje, koja je glavna šansa. Max 5 rečenica. Direktno i konkretno."
+                    }, {
+                        "role": "user",
+                        "content": f"CEO ideja: {content}"
+                    }],
+                    temperature=0.75, max_tokens=350
                 )
-                groq_questions = groq_resp.choices[0].message.content
-                await send("groq", groq_questions, {"agent": "groq"})
+                groq_view = groq_resp.choices[0].message.content
+                await send("groq", groq_view, {"agent": "groq"})
+                await update_progress("brainstorm", 35, "working")
 
-                session["step"] = "brainstorm_dialog"
-                session["messages"].append({"role": "assistant", "content": groq_questions})
-                await update_progress("ceo", 50, "active")
-                await update_progress("brainstorm", 30, "working")
-                save_session_to_disk(session_id)
-
-            # ── CEO odgovara na pitanja ──────────────────────
-            elif session["step"] == "brainstorm_dialog" and msg_type == "message":
-                session["messages"].append({"role": "user", "content": content})
-                await update_progress("brainstorm", 60, "working")
-
-                # Gemini — duboka analiza
-                await send("agent_start", "🎯 **GEMINI** radi duboku analizu...", {"agent": "gemini"})
-                gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
-                gemini_prompt = f"""
-CEO ideja: {session['idea_raw']}
-CEO odgovori: {content}
-
-Napravi FINALNU DEFINICIJU ideje:
-
-**NAZIV PROJEKTA:** [ime]
-**ŠTA JE TO:** [2-3 rečenice]
-**PROBLEM KOJI REŠAVA:** [konkretno]
-**TARGET KORISNICI:** [ko tačno]
-**KLJUČNE FUNKCIONALNOSTI:**
-- [feature 1]
-- [feature 2]
-- [feature 3]
-**JEDINSTVENA VREDNOST:** [šta ga razlikuje]
-**PROCENA TRŽIŠTA:** [potencijal]
-"""
+                # ── Gemini: market i korisnici ──────────────
+                await send("agent_start", "🔷 **Gemini** analizira tržište...", {"agent": "gemini"})
                 gemini_resp = gemini_client.models.generate_content(
-                    model=GEMINI_MODEL, contents=gemini_prompt
-                )
-                refined = gemini_resp.text
-                session["idea_refined"] = refined
-                await send("gemini", refined, {"agent": "gemini"})
+                    model=GEMINI_MODEL,
+                    contents=f"""Ti si AI market analyst u timu. Groq je rekao: "{groq_view}"
 
-                session["step"] = "idea_approval"
+CEO ideja: {content}
+
+Na osnovu Groq-ove perspektive, dodaj SAMO ono što on nije rekao:
+- Ko su TAČNO target korisnici i koliko ih ima?
+- Ko su 2-3 direktna konkurenta?
+- Koja je 1 najveća pretnja ovoj ideji?
+
+Max 5 rečenica. Direktno."""
+                )
+                gemini_view = gemini_resp.text
+                await send("gemini", gemini_view, {"agent": "gemini"})
+                await update_progress("brainstorm", 65, "working")
+
+                # ── Claude: sinteza + konačna preporuka ─────
+                await send("agent_start", "🟣 **Claude** sintetiše i daje preporuku...", {"agent": "claude"})
+                claude_resp = claude_client.messages.create(
+                    model=CLAUDE_MODEL,
+                    max_tokens=700,
+                    messages=[{"role": "user", "content": f"""Ti si AI koji sintetiše tim diskusiju i daje finalnu preporuku CEO-u.
+
+CEO IDEJA: {content}
+
+GROQ perspektiva: {groq_view}
+GEMINI analiza: {gemini_view}
+
+Na osnovu ove diskusije, daj CEO-u:
+
+**🎯 NAŠA PREPORUKA:**
+[1-2 rečenice — da li ići dalje i zašto]
+
+**✅ 3 GLAVNE PREDNOSTI:**
+- [prednost 1]
+- [prednost 2]
+- [prednost 3]
+
+**⚠️ 2 STVARI KOJE TREBA REŠITI:**
+- [stvar 1]
+- [stvar 2]
+
+**🔧 PREDLOG ALATA I TIMA:**
+- Dizajn: [Canva / Figma / drugo — i zašto]
+- Development: [šta preporučujemo]
+- Ostalo: [šta još treba]
+
+**📋 SLEDEĆI KORAK:**
+[Jedna konkretna akcija]
+
+Budi direktan — CEO treba odluku, ne esej."""}]
+                )
+                synthesis = claude_resp.content[0].text
+
+                # Sačuvaj kompresovani summary sesije
+                session["brainstorm_summary"] = _compress_summary(
+                    content, groq_view, gemini_view, synthesis
+                )
+                session["idea_refined"] = synthesis
+                await send("claude", synthesis, {"agent": "claude"})
                 await update_progress("brainstorm", 100, "done")
                 await update_progress("ceo", 70, "active")
 
-                await send("approval_request",
-                    "---\n✅ **SASTANAK 1 — ODOBRENJE IDEJE**\n\nPregledaj finalnu verziju ideje gore. Da li nastavljamo?",
-                    {"step": "idea_approval", "options": ["DA", "NE", "IZMENI"]}
-                )
+                session["step"] = "idea_approval"
+                session["messages"].append({"role": "assistant", "content": f"[BRAINSTORM SUMMARY]\n{session['brainstorm_summary']}"})
                 save_session_to_disk(session_id)
 
-            # ── CEO odobrava ideju ───────────────────────────
+                await send("approval_request",
+                    "---\n**SASTANAK 1 — ODOBRENJE IDEJE**\n\nTim je dao preporuku gore. Kako nastavljamo?",
+                    {"step": "idea_approval", "options": ["DA", "NE", "IZMENI"]}
+                )
+
+            # ── KORAK 2: CEO odobrava ideju ──────────────────
             elif session["step"] == "idea_approval" and msg_type == "decision":
                 decision = content.upper()
                 note = data.get("note", "")
@@ -265,73 +300,70 @@ Napravi FINALNU DEFINICIJU ideje:
                 if decision == "NE":
                     session["step"] = "idea_input"
                     await update_progress("ceo", 10, "active")
-                    await send("system", f"🔄 Vraćamo se. Recite nam šta treba drugačije?\n*Razlog:* {note}")
+                    await update_progress("brainstorm", 0, "waiting")
+                    await send("system", f"🔄 OK. Opiši ideju ponovo ili izmenjenu verziju.\n*Tvoj komentar:* {note}")
 
                 elif decision in ("DA", "IZMENI"):
                     if note:
                         session["amendments"].append(note)
-                        await send("system", f"📝 Izmene zabeležene: *{note}*")
+                        await send("system", f"📝 Izmena zabeležena: *{note}*")
 
                     await update_progress("ceo", 100, "done")
                     await update_progress("planner", 20, "working")
                     session["step"] = "planning"
-                    await send("agent_start", "📋 **PLANNER** kreira detaljni plan realizacije...", {"agent": "planner"})
 
-                    # Claude — planning
+                    # Koristimo SUMMARY — ne celu diskusiju, da ne trošimo context
+                    context = session.get("brainstorm_summary", session["idea_refined"])
+                    if note:
+                        context += f"\n\nCEO IZMENE: {note}"
+
+                    await send("agent_start", "📋 **Planner** kreira plan realizacije...", {"agent": "planner"})
                     claude_client = Anthropic()
-                    amendments_txt = f"\nCEO izmene: {note}" if note else ""
                     plan_resp = claude_client.messages.create(
                         model=CLAUDE_MODEL,
-                        max_tokens=1500,
-                        messages=[{"role": "user", "content": f"""
-Kreiraj DETALJNI PROJECT PLAN za:
+                        max_tokens=1200,
+                        messages=[{"role": "user", "content": f"""Kreiraj koncizan PROJECT PLAN za:
 
-{session['idea_refined']}
-{amendments_txt}
+{context}
 
-Format:
-**📅 TIMELINE**
+**📅 TIMELINE** (8 nedelja)
 - Nedelja 1-2: [šta]
 - Nedelja 3-4: [šta]
 - Nedelja 5-6: [šta]
 - Nedelja 7-8: [šta]
 
-**🎯 MILESTONES**
-[5 konkretnih milestone-a sa datumima]
+**🎯 TOP 5 MILESTONES**
+[milestone: datum]
 
-**👥 TIM**
-[Ko je potreban]
+**👥 TIM** (ko treba)
 
-**💰 BUDGET PROCENA**
-[Breakdown]
+**💰 BUDGET** (okvirni breakdown)
 
-**⚠️ RIZICI**
-[Top 3 rizika + rešenja]
-"""}]
+**⚠️ TOP 3 RIZIKA + rešenja**
+
+Budi koncizan — max 400 reči."""}]
                     )
                     plan = plan_resp.content[0].text
                     session["plan"] = plan
+                    session["plan_summary"] = plan[:600]  # kompresovano za dalji context
                     await send("claude", plan, {"agent": "claude"})
                     await update_progress("planner", 100, "done")
 
                     session["step"] = "plan_approval"
+                    save_session_to_disk(session_id)
                     await send("approval_request",
-                        "---\n✅ **SASTANAK 2 — ODOBRENJE PLANA**\n\nPreglej plan iznad. Da li nastavljamo sa realizacijom?",
+                        "---\n**SASTANAK 2 — ODOBRENJE PLANA**\n\nPreglej plan. Idemo li sa realizacijom?",
                         {"step": "plan_approval", "options": ["DA", "NE", "IZMENI"]}
                     )
-                save_session_to_disk(session_id)
 
-            # ── CEO odobrava plan ────────────────────────────
+            # ── KORAK 3: CEO odobrava plan ───────────────────
             elif session["step"] == "plan_approval" and msg_type == "decision":
                 decision = content.upper()
                 note = data.get("note", "")
 
                 if decision == "NE":
-                    session["step"] = "planning"
-                    await send("system", f"🔄 Revizija plana. Razlog: {note}")
-                    # Ponovi planning
                     session["step"] = "idea_approval"
-                    await send("system", "Pošalji DA ponovo kada si spreman da krenem sa novim planom.")
+                    await send("system", f"🔄 Revizija plana. Komentar: *{note}*\nPošalji DA kada si spreman da krenem sa novim planom.")
 
                 elif decision in ("DA", "IZMENI"):
                     if note:
@@ -340,8 +372,6 @@ Format:
                     await update_progress("coo", 20, "working")
                     session["step"] = "execution"
                     await send("agent_start", "⚙️ **COO** delegira zadatke timu...", {"agent": "coo"})
-
-                    # Pokreni sve agente paralelno
                     await _run_execution(websocket, session, send, update_progress)
                 save_session_to_disk(session_id)
 
@@ -353,17 +383,36 @@ Format:
         save_session_to_disk(session_id)
 
 
+def _compress_summary(idea: str, groq: str, gemini: str, claude: str) -> str:
+    """
+    Kompresuje brainstorm diskusiju u jedan kratak summary.
+    Koristi se kao context za sve naredne agente — sprečava lutanje i bag sesije.
+    """
+    return f"""=== PROJEKAT SUMMARY ===
+IDEJA: {idea[:200]}
+
+TIM DISKUSIJA:
+• Groq: {groq[:200]}
+• Gemini: {gemini[:200]}
+• Claude preporuka: {claude[:300]}
+
+ODOBRENO: DA
+========================"""
+
+
 async def _run_execution(websocket, session, send, update_progress):
-    """Pokretanje celog execution tima"""
+    """Pokretanje celog execution tima — koristi summary da ne trosi context"""
     claude_client = Anthropic()
-    idea = session["idea_refined"]
-    plan = session["plan"]
-    amendments = "\n".join(session["amendments"]) if session["amendments"] else ""
+
+    # Uvek koristimo kompresovani summary — ne celu diskusiju
+    context = session.get("brainstorm_summary", session.get("idea_refined", ""))
+    plan_ctx = session.get("plan_summary", session.get("plan", ""))[:500]
+    amendments = ("\nCEO izmene: " + "; ".join(session["amendments"])) if session["amendments"] else ""
 
     # COO brief
     coo_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1000,
-        messages=[{"role": "user", "content": f"Ti si COO. Delegiraj zadatke timu za projekat:\n{idea}\nPlan:\n{plan}\n{f'CEO izmene: {amendments}' if amendments else ''}\n\nNapravi kratki task brief za: Dev, Design, Marketing, QA tim."}]
+        model=CLAUDE_MODEL, max_tokens=800,
+        messages=[{"role": "user", "content": f"Ti si COO. Napravi KRATAK task brief za timove.\n\nPROJEKAT:\n{context}\n\nPLAN:\n{plan_ctx}{amendments}\n\nBrief za: Dev, Design, Marketing, QA. Max 300 reči."}]
     )
     task_brief = coo_resp.content[0].text
     session["task_brief"] = task_brief
@@ -372,10 +421,10 @@ async def _run_execution(websocket, session, send, update_progress):
 
     # Developer
     await update_progress("developer", 20, "working")
-    await send("agent_start", "🏗️ **DEVELOPER** kreira arhitekturu...", {"agent": "developer"})
+    await send("agent_start", "🏗️ **Developer** kreira arhitekturu...", {"agent": "developer"})
     dev_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1200,
-        messages=[{"role": "user", "content": f"Ti si Senior Developer. Napravi tehničku arhitekturu za:\n{idea}\n\nUključi: stack, struktura foldera, ključni moduli, API endpoints, baza podataka."}]
+        model=CLAUDE_MODEL, max_tokens=900,
+        messages=[{"role": "user", "content": f"Ti si Senior Developer. Na osnovu:\n{context}\n\nNapravi tehničku arhitekturu: tech stack, folder struktura, ključni moduli, API endpoints, baza. Max 300 reči."}]
     )
     session["department_outputs"]["development"] = dev_resp.content[0].text
     await send("developer", dev_resp.content[0].text, {"agent": "developer"})
@@ -383,10 +432,10 @@ async def _run_execution(websocket, session, send, update_progress):
 
     # Designer
     await update_progress("designer", 20, "working")
-    await send("agent_start", "🎨 **DESIGNER** kreira design system...", {"agent": "designer"})
+    await send("agent_start", "🎨 **Designer** kreira design sistem...", {"agent": "designer"})
     design_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=800,
-        messages=[{"role": "user", "content": f"Ti si UI/UX Designer. Napravi design sistem za:\n{idea}\n\nUključi: color palette (hex), tipografiju, ključne ekrane, UX tok."}]
+        model=CLAUDE_MODEL, max_tokens=700,
+        messages=[{"role": "user", "content": f"Ti si UI/UX Designer. Na osnovu:\n{context}\n\nNapravi design sistem: color palette (hex kodovi), tipografija, 3 ključna ekrana, preporučeni alati (Canva/Figma/etc i zašto). Max 250 reči."}]
     )
     session["department_outputs"]["design"] = design_resp.content[0].text
     await send("designer", design_resp.content[0].text, {"agent": "designer"})
@@ -394,10 +443,10 @@ async def _run_execution(websocket, session, send, update_progress):
 
     # Marketing
     await update_progress("marketing", 20, "working")
-    await send("agent_start", "📢 **MARKETING** kreira GTM strategiju...", {"agent": "marketing"})
+    await send("agent_start", "📢 **Marketing** kreira GTM strategiju...", {"agent": "marketing"})
     mkt_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=800,
-        messages=[{"role": "user", "content": f"Ti si Marketing Direktor. Napravi go-to-market strategiju za:\n{idea}\n\nUključi: messaging, kanali, launch plan, KPIs."}]
+        model=CLAUDE_MODEL, max_tokens=700,
+        messages=[{"role": "user", "content": f"Ti si Marketing Direktor. Na osnovu:\n{context}\n\nNapravi GTM: glavna poruka, top 3 kanala, launch plan (3 faze), KPIs. Max 250 reči."}]
     )
     session["department_outputs"]["marketing"] = mkt_resp.content[0].text
     await send("marketing", mkt_resp.content[0].text, {"agent": "marketing"})
@@ -407,34 +456,34 @@ async def _run_execution(websocket, session, send, update_progress):
     await update_progress("qa", 20, "working")
     await send("agent_start", "✅ **QA** kreira test strategiju...", {"agent": "qa"})
     qa_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=700,
-        messages=[{"role": "user", "content": f"Ti si QA Lead. Napravi test strategiju za:\n{idea}\n\nUključi: unit, integration, E2E testove i acceptance criteria."}]
+        model=CLAUDE_MODEL, max_tokens=600,
+        messages=[{"role": "user", "content": f"Ti si QA Lead. Na osnovu:\n{context}\n\nNapravi: top 5 test scenarija, acceptance criteria, šta mora proći pre launcha. Max 200 reči."}]
     )
     session["department_outputs"]["qa"] = qa_resp.content[0].text
     await send("qa", qa_resp.content[0].text, {"agent": "qa"})
     await update_progress("qa", 100, "done")
 
-    # Project Manager — mid-review
+    # Project Manager — mid-review (koristi samo kratke excerpts)
     await update_progress("project_manager", 30, "working")
-    await send("agent_start", "📊 **PROJECT MANAGER** priprema mid-review...", {"agent": "project_manager"})
+    await send("agent_start", "📊 **Project Manager** priprema mid-review za CEO...", {"agent": "project_manager"})
     pm_resp = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=900,
-        messages=[{"role": "user", "content": f"""Ti si Project Manager. Napravi CEO mid-review izveštaj.
+        model=CLAUDE_MODEL, max_tokens=700,
+        messages=[{"role": "user", "content": f"""Ti si Project Manager. Napravi KRATAK mid-review za CEO.
 
-Projekat: {idea}
+PROJEKAT: {context[:300]}
 
-Dev output: {session['department_outputs']['development'][:400]}
-Design output: {session['department_outputs']['design'][:300]}
-Marketing output: {session['department_outputs']['marketing'][:300]}
-QA output: {session['department_outputs']['qa'][:300]}
+Tim je završio:
+• Dev: {session['department_outputs']['development'][:200]}
+• Design: {session['department_outputs']['design'][:150]}
+• Marketing: {session['department_outputs']['marketing'][:150]}
+• QA: {session['department_outputs']['qa'][:150]}
 
-Format:
+Format (max 250 reči):
 **📊 STATUS:** [On Track / At Risk]
 **Završenost:** [X%]
-**✅ Urađeno:** [lista]
-**⚠️ Rizici:** [lista]
-**💡 Odluke za CEO:** [2-3 pitanja]
-"""}]
+**✅ Top 3 urađene stvari:**
+**⚠️ Top 2 rizika:**
+**💡 Pitanja za CEO (odluke koje samo ti možeš doneti):**"""}]
     )
     pm_report = pm_resp.content[0].text
     await send("project_manager", pm_report, {"agent": "project_manager"})
