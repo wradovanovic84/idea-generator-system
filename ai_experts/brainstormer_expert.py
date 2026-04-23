@@ -1,14 +1,11 @@
 import os
 import json
 from groq import Groq
-import google.generativeai as genai
+from google import genai as google_genai
 from dotenv import load_dotenv
 from config import *
 
 load_dotenv()
-
-# Setup
-genai.configure(api_key=GEMINI_API_KEY)
 
 class BrainstormerExpert:
     """EXPERT za brainstorming - Groq (brz) + Gemini Pro (duboko)"""
@@ -59,8 +56,8 @@ class BrainstormerExpert:
         
         print("\n\n🎯 FASE 2: Gemini Pro - Duboka analiza...")
         
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        
+        gemini = google_genai.Client(api_key=GEMINI_API_KEY)
+
         prompt = f"""
         EXPERT ANALIZIRAJUĆI STRATEGIJU - Gemini Pro (Detaljan, analitičan)
         
@@ -100,9 +97,9 @@ class BrainstormerExpert:
         Budi PROFESIONALAN I DUBOKO ANALITIZAN!
         """
         
-        response = model.generate_content(prompt)
+        response = gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         gemini_response = response.text
-        
+
         print(f"\n🎯 GEMINI PRO:\n{gemini_response}")
         
         return gemini_response
@@ -136,8 +133,8 @@ class BrainstormerExpert:
     def _create_summary(self, idea, groq, gemini):
         """Napravi sintezi od oba analize"""
         
-        model = genai.GenerativeModel(GEMINI_FLASH_MODEL)
-        
+        gemini = google_genai.Client(api_key=GEMINI_API_KEY)
+
         prompt = f"""
         Napravi KRATKU SINTERZU (do 300 karaktera) koja kombinuje:
         
@@ -150,7 +147,7 @@ class BrainstormerExpert:
         Sintezu napravi sa KEY TAKEAWAYS - šta je najvažnije?
         """
         
-        response = model.generate_content(prompt)
+        response = gemini.models.generate_content(model=GEMINI_FLASH_MODEL, contents=prompt)
         return response.text
 
 

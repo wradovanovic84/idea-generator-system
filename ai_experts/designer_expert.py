@@ -1,17 +1,15 @@
 import os
-import google.generativeai as genai
+from google import genai as google_genai
 from dotenv import load_dotenv
 from config import *
 
 load_dotenv()
 
-genai.configure(api_key=GEMINI_API_KEY)
-
 class DesignerExpert:
     """EXPERT za UI/UX DIZAJN - Gemini Pro"""
-    
+
     def __init__(self):
-        self.model = genai.GenerativeModel(GEMINI_MODEL)
+        self.gemini = google_genai.Client(api_key=GEMINI_API_KEY)
     
     def create_design_system(self, app_name, app_description):
         """Kreira kompletan design system"""
@@ -63,7 +61,7 @@ class DesignerExpert:
         Budi DETALJNO! Kao za Big Tech design system!
         """
         
-        response = self.model.generate_content(prompt)
+        response = self.gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         return response.text
     
     def create_wireframes_description(self, screens_list):
@@ -85,7 +83,7 @@ class DesignerExpert:
         Budi DOVOLJNO DETALJAN da developer može to da implementira!
         """
         
-        response = self.model.generate_content(prompt)
+        response = self.gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         return response.text
     
     def create_user_flows(self, main_feature):
@@ -111,7 +109,7 @@ class DesignerExpert:
         Napravi za našu aplikaciju!
         """
         
-        response = self.model.generate_content(prompt)
+        response = self.gemini.models.generate_content(model=GEMINI_MODEL, contents=prompt)
         return response.text
 
 

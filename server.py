@@ -22,9 +22,7 @@ load_dotenv()
 from config import *
 from anthropic import Anthropic
 from groq import Groq
-import google.generativeai as genai
-
-genai.configure(api_key=GEMINI_API_KEY)
+from google import genai as google_genai
 
 app = FastAPI(title="CEO Idea Incubator", docs_url=None, redoc_url=None)
 
@@ -224,7 +222,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
                 # Gemini — duboka analiza
                 await send("agent_start", "🎯 **GEMINI** radi duboku analizu...", {"agent": "gemini"})
-                gemini_model = genai.GenerativeModel(GEMINI_MODEL)
+                gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
                 gemini_prompt = f"""
 CEO ideja: {session['idea_raw']}
 CEO odgovori: {content}
@@ -242,7 +240,9 @@ Napravi FINALNU DEFINICIJU ideje:
 **JEDINSTVENA VREDNOST:** [šta ga razlikuje]
 **PROCENA TRŽIŠTA:** [potencijal]
 """
-                gemini_resp = gemini_model.generate_content(gemini_prompt)
+                gemini_resp = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL, contents=gemini_prompt
+                )
                 refined = gemini_resp.text
                 session["idea_refined"] = refined
                 await send("gemini", refined, {"agent": "gemini"})

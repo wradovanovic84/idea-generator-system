@@ -1,19 +1,17 @@
 import os
 from groq import Groq
-import google.generativeai as genai
+from google import genai as google_genai
 from dotenv import load_dotenv
 from config import *
 
 load_dotenv()
 
-genai.configure(api_key=GEMINI_API_KEY)
-
 class MarketingExpert:
     """EXPERT za MARKETING - Groq (brz) + Gemini (kreativnost)"""
-    
+
     def __init__(self):
         self.groq = Groq(api_key=GROQ_API_KEY)
-        self.gemini = genai.GenerativeModel(GEMINI_MODEL)
+        self.gemini = google_genai.Client(api_key=GEMINI_API_KEY)
     
     def create_gtm_strategy(self, product_info):
         """Go-to-Market strategija"""
@@ -66,7 +64,7 @@ class MarketingExpert:
         Svaki angle trebam sa unique value proposition!
         """
         
-        gemini_response = self.gemini.generate_content(gemini_prompt)
+        gemini_response = self.gemini.models.generate_content(model=GEMINI_MODEL, contents=gemini_prompt)
         gemini_angles = gemini_response.text
         
         return {
