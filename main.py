@@ -1,3 +1,10 @@
+import sys
+import os
 
-print("🚀 Pokrenut Idea Generator System!")
-print("Sve je spremno!")
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from ai_experts.expert_manager import ExpertTeamManager
+
+if __name__ == "__main__":
+    manager = ExpertTeamManager()
+    manager.run()
