@@ -195,89 +195,68 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 session["messages"].append({"role": "user", "content": content})
                 await update_progress("ceo", 40, "active")
                 await update_progress("brainstorm", 10, "working")
+                await send("agent_start", "⚡🔷🟣 **Groq + Gemini + Claude** rade paralelno...", {"agent": "groq"})
 
-                groq_client  = Groq(api_key=GROQ_API_KEY)
+                groq_client   = Groq(api_key=GROQ_API_KEY)
                 gemini_client = google_genai.Client(api_key=GEMINI_API_KEY)
                 claude_client = Anthropic()
 
-                # ── Groq: brza perspektiva ──────────────────
-                await send("agent_start", "⚡ **Groq** analizira...", {"agent": "groq"})
-                groq_resp = groq_client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=[{
-                        "role": "system",
-                        "content": "Ti si brzi AI strateg u timu. Daj KRATKU perspektivu na ideju: šta je dobro, šta nedostaje, koja je glavna šansa. Max 5 rečenica. Direktno i konkretno."
-                    }, {
-                        "role": "user",
-                        "content": f"CEO ideja: {content}"
-                    }],
-                    temperature=0.75, max_tokens=350
+                GROQ_PROMPT = "Ti si brzi AI strateg. Daj perspektivu na ideju: šta je dobro, šta nedostaje, koja je glavna šansa. Max 4 rečenice. Direktno."
+                GEMINI_PROMPT = f"Ti si market analyst. Za ideju: '{content}'\nOdgovori samo na: ko su target korisnici, 2 konkurenta, 1 najveća pretnja. Max 4 rečenice."
+                CLAUDE_PROMPT = f"Ti si strategist. Za ideju: '{content}'\nDaj: 1 rečenica preporuka, 3 prednosti (bullet), 2 rizika (bullet), koji tech stack za gradnju. Max 150 reči. Bez uvoda."
+
+                # ── SVA 3 PARALELNO ─────────────────────────
+                def call_groq():
+                    r = groq_client.chat.completions.create(
+                        model=GROQ_MODEL,
+                        messages=[{"role": "system", "content": GROQ_PROMPT},
+                                  {"role": "user", "content": content}],
+                        temperature=0.7, max_tokens=250
+                    )
+                    return r.choices[0].message.content
+
+                def call_gemini():
+                    r = gemini_client.models.generate_content(
+                        model=GEMINI_MODEL, contents=GEMINI_PROMPT
+                    )
+                    return r.text
+
+                def call_claude():
+                    r = claude_client.messages.create(
+                        model=CLAUDE_MODEL, max_tokens=300,
+                        messages=[{"role": "user", "content": CLAUDE_PROMPT}]
+                    )
+                    return r.content[0].text
+
+                loop = asyncio.get_event_loop()
+                groq_view, gemini_view, claude_view = await asyncio.gather(
+                    loop.run_in_executor(None, call_groq),
+                    loop.run_in_executor(None, call_gemini),
+                    loop.run_in_executor(None, call_claude),
                 )
-                groq_view = groq_resp.choices[0].message.content
-                await send("groq", groq_view, {"agent": "groq"})
-                await update_progress("brainstorm", 35, "working")
 
-                # ── Gemini: market i korisnici ──────────────
-                await send("agent_start", "🔷 **Gemini** analizira tržište...", {"agent": "gemini"})
-                gemini_resp = gemini_client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=f"""Ti si AI market analyst u timu. Groq je rekao: "{groq_view}"
+                await send("groq",   groq_view,   {"agent": "groq"})
+                await send("gemini", gemini_view,  {"agent": "gemini"})
+                await update_progress("brainstorm", 70, "working")
 
-CEO ideja: {content}
+                # ── Claude finalna sinteza (brza) ────────────
+                synthesis_resp = claude_client.messages.create(
+                    model=CLAUDE_MODEL, max_tokens=400,
+                    messages=[{"role": "user", "content": f"""Sintetiši ovo u JEDAN kratak izveštaj za CEO. Max 200 reči.
 
-Na osnovu Groq-ove perspektive, dodaj SAMO ono što on nije rekao:
-- Ko su TAČNO target korisnici i koliko ih ima?
-- Ko su 2-3 direktna konkurenta?
-- Koja je 1 najveća pretnja ovoj ideji?
+Ideja: {content}
+Groq: {groq_view}
+Gemini: {gemini_view}
+Tvoja analiza: {claude_view}
 
-Max 5 rečenica. Direktno."""
+Format:
+**PREPORUKA:** [1 rečenica]
+**GRADIMO JER:** [2-3 bullet]
+**PAZI NA:** [2 bullet]
+**SLEDEĆI KORAK:** [1 konkretna akcija]"""}]
                 )
-                gemini_view = gemini_resp.text
-                await send("gemini", gemini_view, {"agent": "gemini"})
-                await update_progress("brainstorm", 65, "working")
-
-                # ── Claude: sinteza + konačna preporuka ─────
-                await send("agent_start", "🟣 **Claude** sintetiše i daje preporuku...", {"agent": "claude"})
-                claude_resp = claude_client.messages.create(
-                    model=CLAUDE_MODEL,
-                    max_tokens=700,
-                    messages=[{"role": "user", "content": f"""Ti si AI koji sintetiše tim diskusiju i daje finalnu preporuku CEO-u.
-
-CEO IDEJA: {content}
-
-GROQ perspektiva: {groq_view}
-GEMINI analiza: {gemini_view}
-
-Na osnovu ove diskusije, daj CEO-u:
-
-**🎯 NAŠA PREPORUKA:**
-[1-2 rečenice — da li ići dalje i zašto]
-
-**✅ 3 GLAVNE PREDNOSTI:**
-- [prednost 1]
-- [prednost 2]
-- [prednost 3]
-
-**⚠️ 2 STVARI KOJE TREBA REŠITI:**
-- [stvar 1]
-- [stvar 2]
-
-**🔧 PREDLOG ALATA I TIMA:**
-- Dizajn: [Canva / Figma / drugo — i zašto]
-- Development: [šta preporučujemo]
-- Ostalo: [šta još treba]
-
-**📋 SLEDEĆI KORAK:**
-[Jedna konkretna akcija]
-
-Budi direktan — CEO treba odluku, ne esej."""}]
-                )
-                synthesis = claude_resp.content[0].text
-
-                # Sačuvaj kompresovani summary sesije
-                session["brainstorm_summary"] = _compress_summary(
-                    content, groq_view, gemini_view, synthesis
-                )
+                synthesis = synthesis_resp.content[0].text
+                session["brainstorm_summary"] = _compress_summary(content, groq_view, gemini_view, synthesis)
                 session["idea_refined"] = synthesis
                 await send("claude", synthesis, {"agent": "claude"})
                 await update_progress("brainstorm", 100, "done")
