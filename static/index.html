@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CEO Idea Incubator</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">💡 Idea Incubator</div>
+    <div class="session-info" id="sessionInfo">Nova sesija</div>
+  </div>
+  <div class="header-right">
+    <button class="btn-new" onclick="startNewSession()">+ Nova ideja</button>
+    <div class="status-dot active" id="connStatus" title="Konekcija"></div>
+  </div>
+</header>
+
+<!-- ═══ MAIN LAYOUT ═══ -->
+<main class="layout">
+
+  <!-- ── LEVA STRANA: Workflow ── -->
+  <aside class="workflow-panel">
+    <div class="workflow-title">Workflow</div>
+
+    <div class="workflow-nodes">
+
+      <!-- START -->
+      <div class="wf-node start" id="node-start">
+        <span class="wf-icon">⚑</span> Start
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- CEO -->
+      <div class="wf-node" id="node-ceo" onclick="focusNode('ceo')">
+        <div class="node-header">
+          <span class="wf-icon">👤</span>
+          <span>CEO</span>
+          <div class="node-badge" id="badge-ceo">0%</div>
+        </div>
+        <div class="node-sub">Unos ideje · Brainstorm · Odluke</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-ceo" style="width:0%"></div></div>
+        <div class="node-status" id="status-ceo">čeka</div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- BRAINSTORM -->
+      <div class="wf-node" id="node-brainstorm" onclick="focusNode('brainstorm')">
+        <div class="node-header">
+          <span class="wf-icon">🧠</span>
+          <span>AI Brainstorm</span>
+          <div class="node-badge" id="badge-brainstorm">0%</div>
+        </div>
+        <div class="node-sub">Groq · Gemini · Analiza</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-brainstorm" style="width:0%"></div></div>
+        <div class="node-status" id="status-brainstorm">čeka</div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- PLANNER -->
+      <div class="wf-node" id="node-planner" onclick="focusNode('planner')">
+        <div class="node-header">
+          <span class="wf-icon">📋</span>
+          <span>Planner</span>
+          <div class="node-badge" id="badge-planner">0%</div>
+        </div>
+        <div class="node-sub">Plan realizacije · Timeline · Budget</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-planner" style="width:0%"></div></div>
+        <div class="node-status" id="status-planner">čeka</div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- COO -->
+      <div class="wf-node" id="node-coo" onclick="focusNode('coo')">
+        <div class="node-header">
+          <span class="wf-icon">⚙️</span>
+          <span>COO</span>
+          <div class="node-badge" id="badge-coo">0%</div>
+        </div>
+        <div class="node-sub">Delegira tim · Koordinacija</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-coo" style="width:0%"></div></div>
+        <div class="node-status" id="status-coo">čeka</div>
+      </div>
+
+      <!-- TIM GRID -->
+      <div class="team-grid">
+        <div class="wf-node team" id="node-developer" onclick="focusNode('developer')">
+          <span class="wf-icon">🏗️</span>
+          <div>Developer</div>
+          <div class="node-progress-bar"><div class="node-progress-fill" id="fill-developer" style="width:0%"></div></div>
+          <div class="node-badge sm" id="badge-developer">0%</div>
+        </div>
+        <div class="wf-node team" id="node-designer" onclick="focusNode('designer')">
+          <span class="wf-icon">🎨</span>
+          <div>Designer</div>
+          <div class="node-progress-bar"><div class="node-progress-fill" id="fill-designer" style="width:0%"></div></div>
+          <div class="node-badge sm" id="badge-designer">0%</div>
+        </div>
+        <div class="wf-node team" id="node-marketing" onclick="focusNode('marketing')">
+          <span class="wf-icon">📢</span>
+          <div>Marketing</div>
+          <div class="node-progress-bar"><div class="node-progress-fill" id="fill-marketing" style="width:0%"></div></div>
+          <div class="node-badge sm" id="badge-marketing">0%</div>
+        </div>
+        <div class="wf-node team" id="node-qa" onclick="focusNode('qa')">
+          <span class="wf-icon">✅</span>
+          <div>QA</div>
+          <div class="node-progress-bar"><div class="node-progress-fill" id="fill-qa" style="width:0%"></div></div>
+          <div class="node-badge sm" id="badge-qa">0%</div>
+        </div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- PROJECT MANAGER -->
+      <div class="wf-node" id="node-project_manager" onclick="focusNode('project_manager')">
+        <div class="node-header">
+          <span class="wf-icon">📊</span>
+          <span>Project Manager</span>
+          <div class="node-badge" id="badge-project_manager">0%</div>
+        </div>
+        <div class="node-sub">Mid-review · Izveštaji · Finale</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-project_manager" style="width:0%"></div></div>
+        <div class="node-status" id="status-project_manager">čeka</div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- FINALE -->
+      <div class="wf-node finale" id="node-finale" onclick="focusNode('finale')">
+        <div class="node-header">
+          <span class="wf-icon">🏁</span>
+          <span>Finale</span>
+          <div class="node-badge" id="badge-finale">0%</div>
+        </div>
+        <div class="node-sub">CEO 100% odobrenje · Gotov produkt</div>
+        <div class="node-progress-bar"><div class="node-progress-fill" id="fill-finale" style="width:0%"></div></div>
+        <div class="node-status" id="status-finale">čeka</div>
+      </div>
+      <div class="wf-arrow"></div>
+
+      <!-- END -->
+      <div class="wf-node start" id="node-end">
+        <span class="wf-icon">✦</span> End
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ── DESNA STRANA: Chat ── -->
+  <section class="chat-panel">
+
+    <div class="chat-header" id="chatHeader">
+      <div class="chat-title">CEO · Inkubator Ideja</div>
+      <div class="agent-pills" id="agentPills">
+        <span class="pill groq">Groq</span>
+        <span class="pill gemini">Gemini</span>
+        <span class="pill claude">Claude</span>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+      <!-- Poruke se ubacuju ovde -->
+    </div>
+
+    <!-- Approval panel -->
+    <div class="approval-panel hidden" id="approvalPanel">
+      <div class="approval-label" id="approvalLabel">Da li nastavljamo?</div>
+      <div class="approval-buttons">
+        <button class="btn-approve" onclick="sendDecision('DA')">✅ DA</button>
+        <button class="btn-reject" onclick="sendDecision('NE')">❌ NE</button>
+        <button class="btn-amend" onclick="showAmendInput()">✏️ IZMENI</button>
+      </div>
+      <div class="amend-input hidden" id="amendInput">
+        <input type="text" id="amendText" placeholder="Koje izmene?" />
+        <button onclick="sendDecision('IZMENI')">Pošalji</button>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="chat-input-area">
+      <textarea
+        id="messageInput"
+        placeholder="Opišite vašu ideju..."
+        rows="3"
+        onkeydown="handleKey(event)"
+      ></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMessage()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
